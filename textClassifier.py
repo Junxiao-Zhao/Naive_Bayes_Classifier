@@ -1,5 +1,5 @@
 import re
-import json
+import sys
 import numpy as np
 import pandas as pd
 from collections import defaultdict
@@ -25,6 +25,11 @@ def load_text(file_path: str) -> str:
 class naive_bayes:
 
     def __init__(self, file_path: str) -> None:
+        """The Naive Bayes Classifer
+
+        :param file_path: the file path
+        """
+
         self.file_path = file_path
         self.l_c = None
         self.l_w_c = None
@@ -49,10 +54,15 @@ class naive_bayes:
 
         :param bios: a list of biographies
         :param allowed_words: the allowed words; default empty
-        :return: a dict of biographies with categories as keys
+        :return: a dict of biographies if it's trainning set (empty
+        allowd words), else a lists
         """
 
-        biographies = defaultdict(list)
+        if allowed_words:
+            biographies = list()
+        else:
+            biographies = defaultdict(list)
+
         stop_word_pattern = r"\b" + r"\b|\b".join(
             re.split(r"\s+", load_text(r"./stopwords.txt"))) + r"\b"
 
@@ -71,7 +81,9 @@ class naive_bayes:
             each_bio[2] = re.sub(r"\s+", " ", each_bio[2]).strip()
             if allowed_words:  # remove redundency
                 each_bio[2] = list(set(re.split(" ", each_bio[2])))
-            biographies[each_bio[1]].append(each_bio)
+                biographies.append(each_bio)
+            else:
+                biographies[each_bio[1]].append(each_bio)
 
         return biographies
 
@@ -129,33 +141,97 @@ class naive_bayes:
 
         return l_c, l_w_c
 
+    @staticmethod
+    def actual_prob(row: pd.Series):
+        """Recover the actual probabilities
+
+        :param row: L(C_i|B)
+        :return: P(C_k|B)
+        """
+
+        m = min(row)
+        row = row.apply(lambda c: 2**(m - c) if c - m < 7 else 0)
+        s = sum(row)
+
+        return row / s
+
     def train(self, trainning_set: list):
+        """Train Naive Bayes Classifer base on the trainning set
+
+        :param trainning_set: a trainning set
+        """
+
         bios_train = self.normalization(trainning_set)
         occt_c_train, occt_w_c_train = nb.counting(bios_train)
         self.l_c, self.l_w_c = self.probabilities(occt_c_train, occt_w_c_train)
 
     def predict(self, test_set: list):
+        """Predict the given test set
+
+        :param test_set: a test set
+        :return: P(C|B)
+        """
+
         bios_test = self.normalization(test_set, list(self.l_w_c.index))
-
         l_c_b = defaultdict(dict)
+        labels = list()
 
-        for categ, bios in bios_test.items():
-            for name, _, words in bios:
+        for name, label, words in bios_test:
+            labels.append(label)
+            for categ in self.l_w_c.columns:
                 l_c_b[categ][name] = self.l_c[categ] + sum(
                     [self.l_w_c.loc[w, categ] for w in words])
 
+        pred = pd.DataFrame.from_dict(l_c_b)
+        pred = pred.apply(self.actual_prob, axis=1)
+        pred.insert(len(pred.columns), "predict",
+                    pred.apply(lambda row: row.idxmax(), axis=1))
+        pred.insert(len(pred.columns), "actual", labels)
 
-if __name__ == "__main__":
-    nb = naive_bayes(r"./tinyCorpus.txt")
-    bios_train, bios_test = nb.train_test_split(5)
-    """ train_bios = nb.normalization(bios_train)
-    occt_c_train, occt_w_c_train = nb.counting(train_bios)
-    # print(occt_c_train)
-    # occt_w_c_train.to_csv("./OCCT(W,C)_train.csv")
-    freqt_c, freqt_c_w = nb.probabilities(occt_c_train, occt_w_c_train)
-    print(freqt_c)
-    freqt_c_w.to_csv("./-Log(W,C)_train.csv") """
-    nb.train(bios_train)
-    """ bios_test = nb.predict(bios_test)
-    with open("test_norm.json", 'w') as f:
-        json.dump(bios_test, f) """
+        return pred
+
+    @staticmethod
+    def format_output(pred: pd.DataFrame):
+        """Generate format output
+
+        :param pred: the prediction dataframe
+        :return: a format string
+        """
+
+        right = 0
+        total = pred.shape[0]
+        output = []
+
+        for name, row in pred.iterrows():
+
+            correct = False
+            if row.loc["predict"] == row.loc["actual"]:
+                right += 1
+                correct = True
+
+            output.append("%s.\tPrediction: %s.\t%s.\n" %
+                          (name.title(), row.loc["predict"],
+                           "Right" if correct else "Wrong"))
+
+            for categ, prob in row.iloc[:-2].items():
+                output.append(f"{categ}: {prob:.2f}\t")
+
+            output.append("\n\n")
+
+        acc = right / total
+        output.append(f"Overall accuracy: {right} out of {total} = {acc:.2f}.")
+
+        return "".join(output)
+
+
+args = sys.argv[1:]
+nb = naive_bayes(args[0])
+bios_train, bios_test = nb.train_test_split(int(args[1]))
+nb.train(bios_train)
+pred = nb.predict(bios_test)
+output = nb.format_output(pred)
+
+with open(args[0].split(".")[0] + "_output.txt", 'w') as f:
+    f.write(output)
+
+print(output)

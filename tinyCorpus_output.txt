@@ -1,0 +1,13 @@
+Benjamin Disraeli.	Prediction: writer.	Wrong.
+government: 0.44	music: 0.07	writer: 0.49	
+
+George Eliot.	Prediction: writer.	Right.
+government: 0.01	music: 0.08	writer: 0.91	
+
+Barbara Jordan.	Prediction: government.	Right.
+government: 0.97	music: 0.03	writer: 0.00	
+
+Clara Schumann.	Prediction: music.	Right.
+government: 0.01	music: 0.98	writer: 0.01	
+
+Overall accuracy: 3 out of 4 = 0.75.
